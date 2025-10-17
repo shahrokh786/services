@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "cypress": "^15.4.0",
+    "jest-environment-jsdom": "^30.2.0"
+  }
+}
