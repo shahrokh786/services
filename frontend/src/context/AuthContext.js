@@ -1,77 +1,82 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import axios from 'axios';
+import authService from '../services/authService';
 
 const AuthContext = createContext();
 
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
-
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
+    const login = async (loginData, suppressAlert = false) => {
+        try {
+            const response = await authService.login(loginData);
+            // This line now correctly expects the nested 'user' object from the backend.
+            const loggedInUser = response.data.user; 
+            
+            // This will now correctly set the state with the user object.
+            setUser(loggedInUser);
 
-  const checkAuth = async () => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      try {
-        const response = await axios.get('http://localhost:5000/api/auth/me');
-        setUser(response.data);
-      } catch (error) {
-        localStorage.removeItem('token');
-        delete axios.defaults.headers.common['Authorization'];
-      }
-    }
-    setLoading(false);
-  };
+            if (!suppressAlert) {
+                alert('🔐 Login successful!');
+            }
+            // Return the full user object so other components can use it.
+            return loggedInUser; 
+        } catch (error) {
+            console.error('Login failed:', error);
+            if (!suppressAlert) {
+              alert('❌ Login failed: ' + (error.response?.data?.message || error.message));
+            }
+            return null;
+        }
+    };
 
-  const login = async (email, password) => {
-    const response = await axios.post('http://localhost:5000/api/auth/login', {
-      email,
-      password
-    });
-    
-    const { token, user: userData } = response.data;
-    localStorage.setItem('token', token);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    setUser(userData);
-    
-    return userData;
-  };
+    const register = async (registerData) => {
+        try {
+            await authService.register(registerData);
+            alert('🎉 Registration successful! Please log in.');
+            return true;
+        } catch (error) {
+            console.error('Registration failed:', error);
+            alert('❌ Registration failed: ' + (error.response?.data?.message || error.message));
+            return false;
+        }
+    };
 
-  const register = async (userData) => {
-    const response = await axios.post('http://localhost:5000/api/auth/register', userData);
-    
-    const { token, user: newUser } = response.data;
-    localStorage.setItem('token', token);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    setUser(newUser);
-    
-    return newUser;
-  };
+    const logout = async () => {
+        try {
+            await authService.logout();
+            setUser(null);
+        } catch (error) {
+            console.error('Logout failed:', error);
+            setUser(null);
+        }
+    };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    delete axios.defaults.headers.common['Authorization'];
-    setUser(null);
-  };
+    useEffect(() => {
+        const checkLoggedIn = async () => {
+            try {
+                // This call also expects the nested user object from the /profile route.
+                const { data } = await authService.getProfile();
+                setUser(data.user);
+            } catch (error) {
+                setUser(null);
+            } finally {
+                setLoading(false);
+            }
+        };
+        checkLoggedIn();
+    }, []);
 
-  const value = {
-    user,
-    login,
-    register,
-    logout,
-    loading
-  };
+    const value = { user, loading, login, register, logout };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+    return (
+        <AuthContext.Provider value={value}>
+            {!loading && children}
+        </AuthContext.Provider>
+    );
 };
+
+export const useAuth = () => {
+    return useContext(AuthContext);
+};
+
