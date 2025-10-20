@@ -19,7 +19,8 @@ import CreateService from './pages/CreateService';
 import MyServices from './pages/MyServices';
 import EditService from './pages/EditService';
 import MyBookings from './pages/MyBookings'; 
-import ManageBookings from './pages/ManageBookings'; // <-- 1. IMPORT THE NEW PAGE
+import ManageBookings from './pages/ManageBookings';
+import InboxPage from './pages/InboxPage'; // <-- 1. IMPORT THE NEW INBOX PAGE
 
 function App() {
   return (
@@ -47,8 +48,10 @@ function App() {
               <Route path="/create-service" element={<CreateService />} />
               <Route path="/my-services" element={<MyServices />} />
               <Route path="/edit-service/:id" element={<EditService />} />
-              {/* 2. ADD THE PROTECTED ROUTE FOR PROVIDERS TO MANAGE THEIR BOOKINGS */}
               <Route path="/manage-bookings" element={<ManageBookings />} />
+              
+              {/* 2. ADD THE NEW, PROTECTED ROUTE FOR THE PROVIDER'S INBOX */}
+              <Route path="/inbox" element={<InboxPage />} />
             </Route>
 
             {/* --- Fallback Route for unknown roads --- */}

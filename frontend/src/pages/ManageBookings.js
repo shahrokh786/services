@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import bookingService from '../services/bookingService'; // <-- Import our dedicated booking service
+import bookingService from '../services/bookingService';
 
 const ManageBookings = () => {
     const [bookings, setBookings] = useState([]);
@@ -9,13 +9,10 @@ const ManageBookings = () => {
     useEffect(() => {
         const fetchProviderBookings = async () => {
             try {
-                setLoading(true);
-                // This page fetches data using the dedicated provider endpoint.
                 const { data } = await bookingService.getProviderBookings();
                 setBookings(data);
             } catch (error) {
                 console.error("Failed to fetch provider bookings:", error);
-                alert("Could not load your bookings.");
             } finally {
                 setLoading(false);
             }
@@ -24,24 +21,19 @@ const ManageBookings = () => {
     }, []);
 
     const handleStatusUpdate = async (bookingId, newStatus) => {
-        try {
-            // This is an "optimistic update" for a snappy user experience.
-            // We update the UI state immediately, assuming the backend call will succeed.
-            const updatedBookings = bookings.map(b => 
-                b._id === bookingId ? { ...b, status: newStatus } : b
-            );
-            setBookings(updatedBookings);
+        // Optimistic UI update for a snappy feel
+        const originalBookings = [...bookings];
+        setBookings(bookings.map(b => b._id === bookingId ? { ...b, status: newStatus } : b));
 
-            // Then, we send the actual update request to the backend.
+        try {
             await bookingService.updateBookingStatus(bookingId, newStatus);
         } catch (error) {
             console.error("Failed to update booking status:", error);
-            alert("Failed to update status. Please try again.");
-            // In a real production app, we would add logic here to revert the UI change if the backend call fails.
+            alert("Failed to update status. Reverting change.");
+            setBookings(originalBookings); // Revert on failure
         }
     };
     
-    // Helper function for styling the status badges
     const getStatusBadge = (status) => {
         switch (status) {
             case 'pending': return 'bg-yellow-100 text-yellow-800';
@@ -80,16 +72,14 @@ const ManageBookings = () => {
                                             <p className="text-sm text-gray-600">
                                                 <span className="font-semibold">Date:</span> {new Date(booking.date).toLocaleDateString()}
                                             </p>
-                                            <p className="text-sm text-gray-600 capitalize">
-                                                <span className="font-semibold">Time:</span> {booking.time}
-                                            </p>
                                         </div>
                                         <div className="mt-4 sm:mt-0 flex flex-col items-start sm:items-end">
                                             <p className="text-lg font-bold">${booking.price}</p>
                                             <div className={`mt-1 text-sm font-semibold px-3 py-1 rounded-full ${getStatusBadge(booking.status)}`}>
                                                 {booking.status}
                                             </div>
-                                            {/* Action buttons are only shown for pending requests */}
+                                            {/* --- THIS IS THE CRITICAL LOGIC --- */}
+                                            {/* Action buttons are ONLY shown for 'pending' requests. */}
                                             {booking.status === 'pending' && (
                                                 <div className="flex space-x-2 mt-4">
                                                     <button onClick={() => handleStatusUpdate(booking._id, 'confirmed')} className="bg-green-500 text-white text-sm font-semibold py-1 px-3 rounded-md hover:bg-green-600 transition-colors">Confirm</button>

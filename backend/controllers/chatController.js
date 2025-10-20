@@ -1,9 +1,10 @@
 import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
-import { getReceiverSocketId, io } from '../socket/socket.js'; // We will create this file next
+// --- CRITICAL FIX: The import path is now corrected to point to our single, unified server file ---
+import { getReceiverSocketId, io } from '../server.js'; 
 
 // @desc    Send a message to a user
-// @route   POST /api/messages/send/:id
+// @route   POST /api/chats/send/:id
 // @access  Private
 const sendMessage = async (req, res) => {
     try {
@@ -11,38 +12,32 @@ const sendMessage = async (req, res) => {
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
 
-        // Find if a conversation already exists between these two users
         let conversation = await Conversation.findOne({
             participants: { $all: [senderId, receiverId] },
         });
 
-        // If no conversation exists, create a new one
         if (!conversation) {
             conversation = await Conversation.create({
                 participants: [senderId, receiverId],
             });
         }
 
-        // Create the new message
         const newMessage = new Message({
             senderId,
             receiverId,
             message,
         });
 
-        // Add the new message to the conversation's messages array
         if (newMessage) {
             conversation.messages.push(newMessage._id);
         }
 
-        // This will run both saves in parallel for efficiency
         await Promise.all([conversation.save(), newMessage.save()]);
 
         // --- REAL-TIME MAGIC ---
-        // Check if the receiver is currently online
         const receiverSocketId = getReceiverSocketId(receiverId);
         if (receiverSocketId) {
-            // If they are online, send the message to them directly via socket.io
+            // The 'io' instance is now correctly imported from server.js
             io.to(receiverSocketId).emit("newMessage", newMessage);
         }
 
@@ -54,7 +49,7 @@ const sendMessage = async (req, res) => {
 };
 
 // @desc    Get messages between the logged-in user and another user
-// @route   GET /api/messages/:id
+// @route   GET /api/chats/:id
 // @access  Private
 const getMessages = async (req, res) => {
     try {
@@ -63,16 +58,38 @@ const getMessages = async (req, res) => {
 
         const conversation = await Conversation.findOne({
             participants: { $all: [senderId, userToChatId] },
-        }).populate("messages"); // This will fill the 'messages' array with the actual message documents
+        }).populate("messages");
 
         if (!conversation) return res.status(200).json([]);
 
-        const messages = conversation.messages;
-        res.status(200).json(messages);
+        res.status(200).json(conversation.messages);
     } catch (error) {
         console.error("Error in getMessages controller: ", error.message);
         res.status(500).json({ error: "Internal server error" });
     }
 };
 
-export { sendMessage, getMessages };
+// --- NEW "INBOX" FUNCTIONALITY ---
+// @desc    Get all conversations for the logged-in user
+// @route   GET /api/chats
+// @access  Private
+const getConversations = async (req, res) => {
+    try {
+        const loggedInUserId = req.user._id;
+        const conversations = await Conversation.find({
+            participants: loggedInUserId,
+        }).populate({
+            path: "participants",
+            select: "name profilePicture email", // We need email and other details for the inbox UI
+        });
+
+        res.status(200).json(conversations);
+    } catch (error) {
+        console.error("Error in getConversations controller: ", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+// We now export the new function along with the old ones.
+export { sendMessage, getMessages, getConversations };
+

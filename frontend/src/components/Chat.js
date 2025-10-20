@@ -1,225 +1,96 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSocket } from '../context/SocketContext';
-import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import chatService from '../services/chatService'; // 1. Import our dedicated chat service
+import useListenMessages from '../hooks/useListenMessages'; // 2. Import our real-time listener hook
 
-const Chat = ({ chatId, onClose, otherUser }) => {
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [typingUsers, setTypingUsers] = useState([]);
-  const socket = useSocket();
-  const { user } = useAuth();
-  const messagesEndRef = useRef(null);
+const Chat = ({ otherUser, onClose }) => {
+    const [messages, setMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [loading, setLoading] = useState(true);
+    const { user } = useAuth();
+    const messagesEndRef = useRef(null);
 
-  useEffect(() => {
-    if (chatId) {
-      fetchMessages();
-      joinChat();
-    }
+    // 3. This hook handles all real-time listening for new messages from other users.
+    useListenMessages(setMessages);
 
-    return () => {
-      if (socket && chatId) {
-        socket.emit('typing-stop', { chatId, userId: user.id });
-        socket.off('receive-message');
-        socket.off('user-typing');
-        socket.off('user-stop-typing');
-      }
-    };
-  }, [chatId]);
+    // This useEffect fetches the initial chat history when the component mounts.
+    useEffect(() => {
+        const getMessageHistory = async () => {
+            try {
+                setLoading(true);
+                // 4. It correctly delegates the API call to the chatService.
+                const { data } = await chatService.getMessages(otherUser._id);
+                setMessages(data);
+            } catch (error) {
+                console.error("Failed to fetch message history:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        getMessageHistory();
+    }, [otherUser._id]);
 
-  useEffect(() => {
-    if (socket) {
-      socket.on('receive-message', (message) => {
-        setMessages(prev => [...prev, message]);
-      });
+    // This useEffect automatically scrolls to the bottom when new messages arrive.
+    useEffect(() => {
+        setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+    }, [messages]);
 
-      socket.on('user-typing', (data) => {
-        setTypingUsers(prev => {
-          if (!prev.find(u => u.userId === data.userId)) {
-            return [...prev, data];
-          }
-          return prev;
-        });
-      });
+    const handleSendMessage = async (e) => {
+        e.preventDefault();
+        if (!newMessage.trim()) return;
 
-      socket.on('user-stop-typing', (data) => {
-        setTypingUsers(prev => prev.filter(u => u.userId !== data.userId));
-      });
-    }
-
-    return () => {
-      if (socket) {
-        socket.off('receive-message');
-        socket.off('user-typing');
-        socket.off('user-stop-typing');
-      }
-    };
-  }, [socket]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, typingUsers]);
-
-  const fetchMessages = async () => {
-    try {
-      const response = await axios.get(`http://localhost:5000/api/chats/${chatId}/messages`);
-      setMessages(response.data);
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const joinChat = () => {
-    if (socket && chatId) {
-      socket.emit('join-chat', chatId);
-    }
-  };
-
-  const sendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !socket) return;
-
-    const messageData = {
-      chatId,
-      senderId: user.id,
-      senderName: user.name,
-      recipientId: otherUser.id,
-      content: newMessage.trim()
+        try {
+            // 5. It correctly sends the message via an API call using our service.
+            // The backend will save it and push it to the other user in real-time.
+            const { data: sentMessage } = await chatService.sendMessage(otherUser._id, newMessage);
+            
+            // --- 6. CRITICAL FIX: THE OPTIMISTIC UI UPDATE ---
+            // We immediately add the message we just successfully sent to our own chat window.
+            // This solves the "disappearing message" bug.
+            setMessages([...messages, sentMessage]);
+            setNewMessage('');
+        } catch (error) {
+            console.error("Failed to send message:", error);
+            alert("Could not send your message. Please try again.");
+        }
     };
 
-    socket.emit('send-message', messageData);
-    setNewMessage('');
-    stopTyping();
-  };
-
-  const handleTyping = () => {
-    if (socket) {
-      socket.emit('typing-start', {
-        chatId,
-        userId: user.id,
-        userName: user.name
-      });
-    }
-  };
-
-  const stopTyping = () => {
-    if (socket) {
-      socket.emit('typing-stop', {
-        chatId,
-        userId: user.id
-      });
-    }
-  };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const formatTime = (dateString) => {
-    return new Date(dateString).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
-
-  if (loading) {
     return (
-      <div className="fixed bottom-4 right-4 w-80 h-96 bg-white rounded-lg shadow-xl border flex items-center justify-center">
-        <div>Loading chat...</div>
-      </div>
+        <div className="fixed bottom-4 right-4 w-96 h-[500px] bg-white rounded-lg shadow-2xl border flex flex-col z-50 animate-fade-in-up">
+            {/* Header */}
+            <div className="bg-blue-600 text-white p-3 rounded-t-lg flex justify-between items-center flex-shrink-0">
+                <div className="flex items-center">
+                    <img src={otherUser.profilePicture || `https://placehold.co/40x40/e2e8f0/64748b?text=${otherUser.name.charAt(0)}`} alt={otherUser.name} className="w-8 h-8 rounded-full mr-3"/>
+                    <span className="font-semibold">{otherUser.name}</span>
+                </div>
+                <button onClick={onClose} className="text-2xl leading-none hover:text-gray-200">&times;</button>
+            </div>
+
+            {/* Messages Container */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {loading && <p className="text-center text-gray-500">Loading chat history...</p>}
+                {messages.map((message) => (
+                    <div key={message._id} className={`flex ${message.senderId === user._id ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${message.senderId === user._id ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}>
+                            <p className="text-sm">{message.message}</p>
+                        </div>
+                    </div>
+                ))}
+                <div ref={messagesEndRef} />
+            </div>
+
+            {/* Message Input */}
+            <form onSubmit={handleSendMessage} className="p-3 border-t bg-gray-50 rounded-b-lg">
+                <div className="flex space-x-2">
+                    <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Type a message..." className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+                    <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 text-white font-semibold px-5 py-2 rounded-full hover:bg-blue-700 disabled:bg-blue-300 transition-all">Send</button>
+                </div>
+            </form>
+        </div>
     );
-  }
-
-  return (
-    <div className="fixed bottom-4 right-4 w-80 h-96 bg-white rounded-lg shadow-xl border flex flex-col">
-      {/* Chat Header */}
-      <div className="bg-blue-600 text-white p-3 rounded-t-lg flex justify-between items-center">
-        <div className="flex items-center">
-          <img
-            src={otherUser.profilePicture || '/default-avatar.png'}
-            alt={otherUser.name}
-            className="w-8 h-8 rounded-full mr-2"
-          />
-          <span className="font-semibold">{otherUser.name}</span>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-white hover:text-gray-200"
-        >
-          ×
-        </button>
-      </div>
-
-      {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {messages.map((message) => (
-          <div
-            key={message._id}
-            className={`flex ${
-              message.sender._id === user.id ? 'justify-end' : 'justify-start'
-            }`}
-          >
-            <div
-              className={`max-w-xs rounded-lg px-3 py-2 ${
-                message.sender._id === user.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-800'
-              }`}
-            >
-              <p className="text-sm">{message.content}</p>
-              <p className={`text-xs mt-1 ${
-                message.sender._id === user.id ? 'text-blue-200' : 'text-gray-500'
-              }`}>
-                {formatTime(message.createdAt)}
-              </p>
-            </div>
-          </div>
-        ))}
-
-        {/* Typing Indicators */}
-        {typingUsers.map((typingUser) => (
-          <div key={typingUser.userId} className="flex justify-start">
-            <div className="bg-gray-200 rounded-lg px-3 py-2">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Message Input */}
-      <form onSubmit={sendMessage} className="p-3 border-t">
-        <div className="flex space-x-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => {
-              setNewMessage(e.target.value);
-              handleTyping();
-            }}
-            onBlur={stopTyping}
-            placeholder="Type a message..."
-            className="flex-1 border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="submit"
-            disabled={!newMessage.trim()}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition"
-          >
-            Send
-          </button>
-        </div>
-      </form>
-    </div>
-  );
 };
 
 export default Chat;
+

@@ -17,14 +17,16 @@ export const AuthProvider = ({ children }) => {
             setUser(loggedInUser);
 
             if (!suppressAlert) {
-                alert('🔐 Login successful!');
+                // Using alert() is generally discouraged in production apps. 
+                // Consider a more modern notification system.
+                console.log('🔐 Login successful!');
             }
             // Return the full user object so other components can use it.
             return loggedInUser; 
         } catch (error) {
             console.error('Login failed:', error);
             if (!suppressAlert) {
-              alert('❌ Login failed: ' + (error.response?.data?.message || error.message));
+                console.error('❌ Login failed: ' + (error.response?.data?.message || error.message));
             }
             return null;
         }
@@ -33,11 +35,11 @@ export const AuthProvider = ({ children }) => {
     const register = async (registerData) => {
         try {
             await authService.register(registerData);
-            alert('🎉 Registration successful! Please log in.');
+            console.log('🎉 Registration successful! Please log in.');
             return true;
         } catch (error) {
             console.error('Registration failed:', error);
-            alert('❌ Registration failed: ' + (error.response?.data?.message || error.message));
+            console.error('❌ Registration failed: ' + (error.response?.data?.message || error.message));
             return false;
         }
     };
@@ -48,6 +50,7 @@ export const AuthProvider = ({ children }) => {
             setUser(null);
         } catch (error) {
             console.error('Logout failed:', error);
+            // Ensure user is logged out on the frontend even if the backend call fails
             setUser(null);
         }
     };
@@ -59,6 +62,7 @@ export const AuthProvider = ({ children }) => {
                 const { data } = await authService.getProfile();
                 setUser(data.user);
             } catch (error) {
+                // This is an expected outcome if the user isn't logged in (e.g., no valid token)
                 setUser(null);
             } finally {
                 setLoading(false);
@@ -71,6 +75,7 @@ export const AuthProvider = ({ children }) => {
 
     return (
         <AuthContext.Provider value={value}>
+            {/* This prevents rendering the app until the initial user check is complete */}
             {!loading && children}
         </AuthContext.Provider>
     );

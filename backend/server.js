@@ -3,24 +3,24 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
-import { createServer } from 'http'; // 1. We still need to import this
-import { Server } from 'socket.io'; // 2. And this
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 // --- All Your Existing Route Imports are Preserved ---
 import serviceRoutes from './routes/serviceRoutes.js';
-import authRoutes from './routes/authRoutes.js'; 
+import authRoutes from './routes/authRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import bookingRoutes from './routes/bookingRoutes.js';
-import chatRoutes from './routes/chatroutes.js'; // 3. Import the new chat routes
+import chatRoutes from './routes/chatRoutes.js';
 import ContactMessage from './models/ContactMessage.js';
 
 dotenv.config();
 
-const app = express(); // 4. Your original Express app is the foundation
-const server = createServer(app); // 5. We create the more powerful http server from it
+const app = express();
+const server = createServer(app);
 
-// 6. We attach the Socket.IO "Post Office" to our new server
-const io = new Server(server, {
+// THIS IS THE SINGLE, TRUE 'io' INSTANCE FOR YOUR ENTIRE APPLICATION
+export const io = new Server(server, {
     cors: {
         origin: "http://localhost:3000",
         methods: ["GET", "POST"],
@@ -32,8 +32,8 @@ const io = new Server(server, {
 // MIDDLEWARE (Preserved)
 // ======================
 app.use(cors({
-    origin: 'http://localhost:3000', 
-    credentials: true                
+    origin: 'http://localhost:3000',
+    credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -46,16 +46,28 @@ app.use('/api/services', serviceRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/bookings', bookingRoutes);
-app.use('/api/chats', chatRoutes); // 7. Add the new chat route
+app.use('/api/chats', chatRoutes); // The new chat route is correctly added
 
 // Your other routes are also preserved
-app.get('/health', (req, res) => { /* ... */ });
-app.post('/api/contact', async (req, res) => { /* ... */ });
+app.get('/health', (req, res) => {
+    res.json({ status: 'OK ✅', message: 'Backend is running perfectly!' });
+});
+app.post('/api/contact', async (req, res) => {
+    try {
+        const { name, email, subject, message } = req.body;
+        if (!name || !email || !message) { return res.status(400).json({ success: false, message: 'Name, email, and message required' }); }
+        const newMessage = new ContactMessage({ name, email, subject: subject || 'No Subject', message });
+        await newMessage.save();
+        res.status(201).json({ success: true, message: 'Message received!' });
+    } catch (error) {
+        console.error('Error saving contact message:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
 
 // ======================
 // REAL-TIME CHAT LOGIC (The "Post Office")
 // ======================
-// We need to keep track of which user is connected to which socket
 const userSocketMap = {}; // { userId: socketId }
 
 export const getReceiverSocketId = (receiverId) => {
@@ -65,11 +77,10 @@ export const getReceiverSocketId = (receiverId) => {
 io.on('connection', (socket) => {
     console.log(`✅ User Connected: ${socket.id}`);
     const userId = socket.handshake.query.userId;
-    if (userId) {
+    if (userId && userId !== "undefined") {
         userSocketMap[userId] = socket.id;
     }
 
-    // Send the list of online users to all clients
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
     socket.on('disconnect', () => {
@@ -79,7 +90,6 @@ io.on('connection', (socket) => {
     });
 });
 
-
 // ======================
 // DATABASE & SERVER START (Upgraded)
 // ======================
@@ -87,9 +97,8 @@ const startServer = async () => {
     try {
         await mongoose.connect(process.env.MONGODB_URI);
         console.log('✅ MongoDB Connected Successfully');
-
         const PORT = process.env.PORT || 5000;
-        // 8. CRITICAL: We start the new 'server' (with Socket.IO), not the old 'app'
+        // We now start the new 'server' (with Socket.IO)
         server.listen(PORT, () => {
             console.log(`🚀 Server & Chat Hub running on: http://localhost:${PORT}`);
         });
@@ -100,7 +109,4 @@ const startServer = async () => {
 };
 
 startServer();
-
-// We need to export 'io' so our controller can use it
-export { io };
 
