@@ -2,15 +2,13 @@
 
 import { Server } from "socket.io";
 
-// Module-scoped variables for the Socket.IO server instance and user mapping
 let io;
+// Ensure userSocketMap is reliably updated
 const userSocketMap = {}; // { userId: socketId }
 
-// Initializes the Socket.IO server, attaching it to the main HTTP server
 const initializeSocket = (httpServer) => {
     io = new Server(httpServer, {
         cors: {
-            // Use environment variable for frontend URL in production
             origin: process.env.FRONTEND_URL || "http://localhost:3000",
             methods: ["GET", "POST"],
             credentials: true
@@ -18,42 +16,52 @@ const initializeSocket = (httpServer) => {
     });
 
     io.on("connection", (socket) => {
-        console.log("[Socket.IO] User Connected:", socket.id);
+        console.log(`[Socket.IO] User Connected: ${socket.id}`);
         const userId = socket.handshake.query.userId;
-        console.log(`[Socket.IO] User ID from handshake: ${userId}`);
+        // Log the received userId type for clarity
+        console.log(`[Socket.IO] Received userId from handshake: ${userId} (Type: ${typeof userId})`);
 
-        // Map userId to socketId if valid
+        // Use strict check for "undefined" string
         if (userId && userId !== "undefined") {
-            console.log(`[Socket.IO] Mapping userId ${userId} to socketId ${socket.id}`);
+            console.log(`[Socket.IO] Mapping userId '${userId}' to socketId ${socket.id}`);
             userSocketMap[userId] = socket.id;
         } else {
-             console.log(`[Socket.IO] WARNING: User connected without a valid userId.`);
+             console.log(`[Socket.IO] WARNING: Connection received without a valid userId query parameter.`);
         }
+        // Log the map state AFTER potential update
         console.log("[Socket.IO] Current userSocketMap:", userSocketMap);
 
-        // Emit the updated list of online user IDs
         io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-        // Handle disconnection
         socket.on("disconnect", () => {
-            console.log(`[Socket.IO] User Disconnected: ${socket.id}, associated userId: ${userId}`);
-            if (userId && userSocketMap[userId] === socket.id) { // Ensure correct socket is removed
-                delete userSocketMap[userId];
-                console.log("[Socket.IO] Updated userSocketMap after disconnect:", userSocketMap);
-                io.emit("getOnlineUsers", Object.keys(userSocketMap));
+            console.log(`[Socket.IO] User Disconnected: ${socket.id}`);
+            // Find the userId associated with THIS disconnecting socket
+            let disconnectedUserId = null;
+            for (const uid in userSocketMap) {
+                if (userSocketMap[uid] === socket.id) {
+                    disconnectedUserId = uid;
+                    break;
+                }
+            }
+            if (disconnectedUserId) {
+                 console.log(`[Socket.IO] Deleting mapping for userId '${disconnectedUserId}' (Socket: ${socket.id})`);
+                 delete userSocketMap[disconnectedUserId];
+                 console.log("[Socket.IO] Updated userSocketMap after disconnect:", userSocketMap);
+                 io.emit("getOnlineUsers", Object.keys(userSocketMap));
+            } else {
+                 console.log(`[Socket.IO] WARNING: Disconnecting socket ${socket.id} had no associated userId in map.`);
             }
         });
     });
 };
 
-// Helper function to get a user's current socket ID
 const getReceiverSocketId = (receiverId) => {
-    console.log(`[Socket.IO] Looking up socket ID for receiverId: ${receiverId}`);
-    const socketId = userSocketMap[receiverId];
+    // Log the type being looked up
+    console.log(`[Socket.IO] getReceiverSocketId: Looking up ID '${receiverId}' (Type: ${typeof receiverId})`);
+    const socketId = userSocketMap[receiverId]; // Direct lookup
     console.log(`[Socket.IO] Found socketId: ${socketId}`);
     return socketId;
 };
 
-// Export the initializer, the helper, and the io instance itself
-// We also export userSocketMap for logging/debugging purposes elsewhere
+// Export userSocketMap for debugging in controller
 export { initializeSocket, getReceiverSocketId, io, userSocketMap };

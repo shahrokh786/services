@@ -2,7 +2,7 @@
 
 import Conversation from '../models/Conversation.js'; // Using Conversation model from restored version
 import Message from '../models/Message.js';       // Using Message model from restored version
-// --- ARCHITECTURAL FIX: Import from the dedicated Socket Hub ---
+// Import from the dedicated Socket Hub
 import { getReceiverSocketId, io, userSocketMap } from '../socket/socket.js';
 
 // @desc    Send a message to a user
@@ -80,25 +80,49 @@ const getMessages = async (req, res) => {
     }
 };
 
-// @desc    Get all conversations for the logged-in user
+
+// --- THIS IS THE UPDATED FUNCTION ---
+// @desc    Get all conversations for the logged-in user (Enhanced with Last Message)
 // @route   GET /api/chats
 // @access  Private
 const getConversations = async (req, res) => {
     try {
         const loggedInUserId = req.user._id;
-        // Find conversations where the loggedInUserId is in the participants array
+
+        // Find conversations and populate participants
         const conversations = await Conversation.find({
             participants: loggedInUserId,
-        }).populate({ // Populate participant details for the inbox UI
+        }).populate({
             path: "participants",
-            select: "name profilePicture email", // Select fields needed for display
+            select: "name profilePicture email", // Fields needed for display
+        }).populate({ // --- ADDED: Populate the *last* message ---
+            path: 'messages', // The field in the Conversation schema linking to Message documents
+            options: {
+                 sort: { createdAt: -1 }, // Sort messages newest first
+                 limit: 1 // Only get the single most recent one
+                }
+        }).lean(); // Use .lean() for performance when modifying results
+
+        // Format the response to add a 'lastMessage' field cleanly
+        const formattedConversations = conversations.map(convo => {
+             // The most recent message (if any) is the first element after populate
+             const lastMessage = convo.messages && convo.messages.length > 0 ? convo.messages[0] : null;
+             return {
+                 ...convo, // Keep conversation ID, participants, timestamps etc.
+                 messages: undefined, // Remove messages array (we only need the last one here)
+                 lastMessage: lastMessage // Add the specific lastMessage object (or null)
+             };
         });
 
-        res.status(200).json(conversations);
+        res.status(200).json(formattedConversations);
+
     } catch (error) {
         console.error("Error in getConversations controller: ", error.message);
-        res.status(500).json({ error: "Internal server error" });
+        res.status(500).json({ error: "Internal server error fetching conversations" });
     }
 };
+// --- END OF UPDATED FUNCTION ---
 
+
+// Make sure all functions are exported
 export { sendMessage, getMessages, getConversations };
