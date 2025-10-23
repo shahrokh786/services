@@ -1,50 +1,86 @@
+// File: frontend/src/context/SocketContext.js
+
 import React, { createContext, useState, useEffect, useContext } from "react";
+// Use correct relative path
 import { useAuth } from "./AuthContext";
 import io from "socket.io-client";
 
 const SocketContext = createContext();
 
 export const useSocket = () => {
-	return useContext(SocketContext);
+    return useContext(SocketContext);
 };
 
 export const SocketProvider = ({ children }) => {
-	const [socket, setSocket] = useState(null);
-	const [onlineUsers, setOnlineUsers] = useState([]);
-	const { user } = useAuth(); // Get the logged-in user from our AuthContext
+    const [socket, setSocket] = useState(null);
+    const [onlineUsers, setOnlineUsers] = useState([]);
+    // --- ADDED: State for notifications ---
+    const [notifications, setNotifications] = useState([]);
+    const { user } = useAuth();
 
-	useEffect(() => {
-		// This effect runs whenever the 'user' state changes (i.e., on login/logout)
-		if (user) {
-			// If a user is logged in, create a new socket connection.
-			const newSocket = io("http://localhost:5000", { // Connect directly to our backend URL
-				query: {
-					userId: user._id, // CRITICAL FIX: Use user._id
-				},
-			});
+    // Effect for socket connection management (login/logout)
+    useEffect(() => {
+        if (user) {
+            const newSocket = io("http://localhost:5000", { // Your backend URL
+                query: {
+                    userId: user._id,
+                },
+            });
+            setSocket(newSocket);
 
-			setSocket(newSocket);
+            newSocket.on("getOnlineUsers", (users) => {
+                setOnlineUsers(users);
+            });
 
-			// Listen for the 'getOnlineUsers' event from the backend.
-			// This gives us a live list of who is currently online.
-			newSocket.on("getOnlineUsers", (users) => {
-				setOnlineUsers(users);
-			});
+            // Cleanup on logout/unmount
+            return () => newSocket.close();
+        } else {
+            if (socket) {
+                socket.close();
+                setSocket(null);
+            }
+        }
+    }, [user]);
 
-			// The cleanup function: this runs when the component unmounts or the user logs out.
-			return () => newSocket.close();
-		} else {
-			// If there is no user, make sure any existing socket is disconnected.
-			if (socket) {
-				socket.close();
-				setSocket(null);
-			}
-		}
-	}, [user]); // The dependency array ensures this effect re-runs on login/logout
+    // --- ADDED: Effect for listening to application events ---
+    useEffect(() => {
+        if (socket) {
+            // Listen for new messages
+            socket.on("newMessage", (newMessage) => {
+                console.log("SocketContext: Received newMessage event:", newMessage); // Debug log
+                // Add a notification object to state
+                setNotifications((prev) => [
+                    ...prev,
+                    { type: 'message', content: `New message...`, id: newMessage._id, senderId: newMessage.senderId } // Include senderId
+                ]);
+            });
 
-	return (
-        // Provide both the socket connection and the list of online users to the entire app.
-        <SocketContext.Provider value={{ socket, onlineUsers }}>
+            // Add listener for new bookings later if needed
+            // socket.on("newBookingNotification", (booking) => { ... });
+
+            // Cleanup listeners
+            return () => {
+                socket.off("newMessage");
+                // socket.off("newBookingNotification");
+            };
+        }
+    }, [socket]); // Run when socket connection is established/changes
+
+    // --- ADDED: Function to clear notifications ---
+    const clearNotificationsByType = (type) => {
+        setNotifications((prev) => prev.filter((n) => n.type !== type));
+    };
+
+    // Provide socket, online users, notifications, and clear function
+    const value = {
+        socket,
+        onlineUsers,
+        notifications,
+        clearNotificationsByType,
+    };
+
+    return (
+        <SocketContext.Provider value={value}>
             {children}
         </SocketContext.Provider>
     );
