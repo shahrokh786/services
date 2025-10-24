@@ -1,4 +1,9 @@
-// File: backend/server.js
+// --- ARCHITECTURAL FIX: Load .env variables FIRST ---
+// By importing this file first, we ensure all environment variables
+// (like STRIPE_SECRET_KEY) are loaded before any other module
+// (like paymentController) tries to access them.
+import './config/dotenvConfig.js';
+// ---------------------------------------------------// File: backend/server.js
 
 import express from 'express';
 import mongoose from 'mongoose';
@@ -12,7 +17,6 @@ import { fileURLToPath } from 'url';
 // --- Local Imports ---
 import connectDB from './config/db.js';
 import { initializeSocket } from './socket/socket.js';
-// --- CORRECT: Ensure errorMiddleware exists and is imported ---
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 // --- Route Imports ---
@@ -21,10 +25,11 @@ import authRoutes from './routes/authRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import bookingRoutes from './routes/bookingRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
-import contactRoutes from './routes/contactRoutes.js'; // Assuming exists
+import contactRoutes from './routes/contactRoutes.js';
+// --- ADDED: Import Payment Routes ---
+import paymentRoutes from './routes/paymentRoutes.js';
 
 // --- Configuration ---
-dotenv.config();
 connectDB();
 
 const app = express();
@@ -58,11 +63,12 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/contact', contactRoutes);
+// --- ADDED: Use Payment Routes ---
+app.use('/api/payments', paymentRoutes); // Register the payment routes
 
 // ======================
 // ERROR HANDLING MIDDLEWARE (Must be AFTER API routes)
 // ======================
-// --- CORRECT: Uncommented and placed correctly ---
 app.use(notFound);
 app.use(errorHandler);
 
@@ -82,5 +88,3 @@ const startServer = async () => {
 };
 
 startServer();
-
-// REMOVED old socket logic and exports
