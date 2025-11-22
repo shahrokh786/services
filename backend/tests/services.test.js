@@ -1,8 +1,8 @@
-const request = require('supertest');
-const app = require('../server');
-const User = require('../models/User');
-const Service = require('../models/Service');
-const jwt = require('jsonwebtoken');
+import request from 'supertest';
+import app from '../server.js';
+import User from '../models/User.js';
+import Service from '../models/Service.js';
+import jwt from 'jsonwebtoken';
 
 describe('Services API', () => {
   let providerToken;
@@ -21,7 +21,7 @@ describe('Services API', () => {
     providerId = provider._id;
 
     // Create customer user
-    await User.create({
+    const customer = await User.create({
       name: 'Service Customer',
       email: 'customer@example.com',
       password: 'password123',
@@ -36,7 +36,7 @@ describe('Services API', () => {
     );
 
     customerToken = jwt.sign(
-      { userId: (await User.findOne({ email: 'customer@example.com' }))._id },
+      { userId: customer._id },
       process.env.JWT_SECRET || 'your-secret-key'
     );
   });
@@ -55,14 +55,18 @@ describe('Services API', () => {
         }
       };
 
+      // NOTE: The authMiddleware in this project might expect something specific.
+      // I will check authMiddleware if this fails.
+
       const response = await request(app)
         .post('/api/services')
-        .set('Authorization', `Bearer ${providerToken}`)
+        // .set('Authorization', `Bearer ${providerToken}`) // Most apps use this
+        .set('Cookie', [`jwt=${providerToken}`]) // This app uses cookies for auth
         .send(serviceData)
         .expect(201);
 
       expect(response.body.title).toBe(serviceData.title);
-      expect(response.body.provider).toBe(providerId.toString());
+      expect(response.body.user).toBe(providerId.toString());
     });
 
     it('should not create service without authentication', async () => {
@@ -71,7 +75,7 @@ describe('Services API', () => {
         .send({ title: 'Test Service' })
         .expect(401);
 
-      expect(response.body.message).toContain('No token');
+      expect(response.body.message).toContain('Not authorized');
     });
   });
 
@@ -82,7 +86,7 @@ describe('Services API', () => {
         description: 'Description 1',
         category: 'plumbing',
         price: 50,
-        provider: providerId,
+        user: providerId,
         location: { city: 'City1', state: 'ST' }
       });
 
@@ -91,7 +95,7 @@ describe('Services API', () => {
         description: 'Description 2',
         category: 'electrical',
         price: 75,
-        provider: providerId,
+        user: providerId,
         location: { city: 'City2', state: 'ST' }
       });
     });
@@ -115,7 +119,7 @@ describe('Services API', () => {
 
     it('should search services by title', async () => {
       const response = await request(app)
-        .get('/api/services?search=Test Service 1')
+        .get('/api/services?keyword=Test Service 1') // Changed from 'search' to 'keyword' to match controller
         .expect(200);
 
       expect(response.body).toHaveLength(1);

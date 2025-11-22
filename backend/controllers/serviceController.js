@@ -9,8 +9,10 @@ const getAllServices = async (req, res) => {
         const query = {};
 
         if (req.query.keyword) {
+            // Escape special characters to prevent ReDoS or invalid regex
+            const keyword = req.query.keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             query.title = {
-                $regex: req.query.keyword, // Search by keyword in the title
+                $regex: keyword, // Search by keyword in the title
                 $options: 'i', // Case-insensitive
             };
         }
